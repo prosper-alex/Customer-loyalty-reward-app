@@ -53,16 +53,55 @@
 *, *::before, *::after { box-sizing: border-box; }
 
 html {
+  min-height: 100%;
+  width: 100%;
+  overflow-x: clip;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   scroll-behavior: smooth;
+  scroll-padding-top: 1rem;
 }
 
 body {
+  min-height: 100%;
+  width: 100%;
+  margin: 0;
+  overflow-x: clip;
   background-color: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
   line-height: 1.6;
+}
+
+#root {
+  min-height: 100%;
+  width: 100%;
+  min-width: 0;
+}
+
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+}
+
+input,
+textarea,
+select {
+  max-width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ── Hide scrollbars on pill filter rows ─────────────── */

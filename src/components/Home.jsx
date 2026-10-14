@@ -1,197 +1,652 @@
 import { Icon } from "@iconify/react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { MobileNav } from "./Sidebar";
+import { useAppData } from "../context/AppDataContext";
 
-export function Home({ onTabChange }) {
+function timeAgo(dateStr) {
+  const diffMs = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diffMs / 60000);
+
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+
+  const hours = Math.floor(mins / 60);
+
+  if (hours < 24) {
+    return `Today, ${new Date(dateStr).toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    })}`;
+  }
+
+  const days = Math.floor(hours / 24);
+
+  if (days === 1) return "Yesterday";
+
+  return `${days}d ago`;
+}
+
+export function Home() {
+  const navigate = useNavigate();
+
+  const [showStickyUserBar, setShowStickyUserBar] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowStickyUserBar(window.scrollY > 250);
+    };
+
+    window.addEventListener("scroll", handleScroll);
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
+  const {
+    profile,
+    rewards,
+    featuredRewards,
+    pointsHistory,
+    purchases,
+    redemptions,
+    notifications,
+  } = useAppData();
+
+  const points = profile?.pointsBalance ?? 0;
+
+  const unreadNotificationCount = notifications.filter(
+    (notification) => !notification.isRead,
+  ).length;
+  const totalPointsEarned = profile?.totalPointsEarned ?? 0;
+
+  const isPlatinum = totalPointsEarned >= 20000;
+  const tier = isPlatinum ? "Platinum" : "Gold";
+
+  const nextGoal = 20000;
+
+  const toNextTier = isPlatinum ? 0 : Math.max(nextGoal - totalPointsEarned, 0);
+
+  const progressPct = isPlatinum
+    ? 100
+    : Math.min(Math.round((totalPointsEarned / nextGoal) * 100), 100);
+  const handleInviteFriend = async () => {
+    const referralCode = profile?.referralCode;
+
+    if (!referralCode) {
+      return;
+    }
+
+    const signupUrl = `${window.location.origin}/signup?ref=${referralCode}`;
+
+    const shareData = {
+      title: "Join Customer Loyalty App",
+      text: "Join me on Customer Loyalty App and start earning loyalty points.",
+      url: signupUrl,
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        return;
+      }
+
+      await navigator.clipboard.writeText(signupUrl);
+
+      alert(
+        "Your referral link has been copied. You can now paste it into WhatsApp or any messaging app.",
+      );
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        console.error("Unable to share referral link:", error);
+      }
+    }
+  };
+
+  /*
+   * Recent activity is built from:
+   * - points history
+   * - redemptions
+   *
+   * Purchases are intentionally not added separately because
+   * a successful purchase already creates an "Earned" point
+   * transaction. Adding both would duplicate the same activity.
+   */
+  const activity = [
+    ...pointsHistory.map((entry) => ({
+      id: `point-${entry._id}`,
+      title: entry.type === "EARN" ? "Points earned" : "Points redeemed",
+      created_at: entry.createdAt,
+      points_delta:
+        entry.type === "EARN"
+          ? Math.abs(entry.points)
+          : -Math.abs(entry.points),
+    })),
+
+    ...redemptions.map((redemption) => ({
+      id: `redemption-${redemption._id}`,
+      title: `Redeemed ${redemption.rewardName}`,
+      created_at: redemption.createdAt,
+      points_delta: -Math.abs(redemption.pointsUsed),
+    })),
+  ].sort(
+    (a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  );
+
+  const availableRewards = rewards
+    .filter(
+      (reward) => reward.isAvailable && reward.quantity > 0,
+      // && !reward.featured,
+    )
+    .slice(0, 3);
+
   return (
     <main className="w-full text-foreground pb-24 md:pb-8 min-h-screen">
-      {/* ── Header ── */}
-      <header className="sticky top-0 z-20 bg-background/80 backdrop-blur-xl px-5 md:px-8 pt-6 pb-4 border-b border-border/40">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <img
-              src="https://randomuser.me/api/portraits/women/44.jpg"
-              alt="Maya Chen"
-              className="size-12 md:size-14 rounded-full object-cover ring-2 ring-primary/20 shadow-sm"
-            />
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Good morning,</p>
-              <p className="text-xl md:text-2xl font-semibold tracking-tight">
-                Maya Chen <span className="ml-1 text-accent">✦</span>
-              </p>
-            </div>
-          </div>
-          <button
-            aria-label="Notifications"
-            className="btn btn-circle btn-ghost btn-md relative border border-border bg-card shadow-sm hover:shadow-md"
-          >
-            <Icon icon="solar:bell-outline" className="size-6 text-foreground" />
-            <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-primary ring-2 ring-card" />
-          </button>
-        </div>
-      </header>
-
-      <div className="px-5 md:px-8 mt-6 space-y-16 lg:space-y-24">
-        {/* ── Points banner ── */}
-        <section className="rounded-3xl bg-gradient-to-br from-primary to-[#D64545] p-6 md:p-10 text-white shadow-lg relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-10 opacity-10 pointer-events-none">
-            <Icon icon="solar:crown-star-bold" className="size-64 -mr-16 -mt-16" />
-          </div>
-          <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-white/80 mb-2">
-                Available points
-              </p>
-              <div className="flex items-baseline gap-2">
-                <p className="text-5xl md:text-6xl font-bold leading-none tracking-tight">2,480</p>
-                <span className="text-lg font-medium text-white/80">pts</span>
+      {showStickyUserBar && (
+        <div className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur-md">
+          <div className="px-5 md:px-8 py-3 flex items-center justify-between gap-4">
+            {/* User */}
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
+                {profile?.profilePhoto ? (
+                  <img
+                    src={profile.profilePhoto}
+                    alt={`${profile.firstName} profile`}
+                    className="size-full object-cover"
+                  />
+                ) : (
+                  <span className="text-sm font-bold text-primary">
+                    {profile?.firstName?.charAt(0)?.toUpperCase()}
+                    {profile?.lastName?.charAt(0)?.toUpperCase()}
+                  </span>
+                )}
               </div>
-              <div className="mt-6 flex flex-wrap items-center gap-3 text-sm text-white/90">
-                <span className="badge badge-outline border-white/40 bg-white/10 text-white py-3 px-4 font-bold">
-                  Gold Member
-                </span>
-                <span className="font-medium">520 pts to Platinum</span>
+
+              <div className="min-w-0">
+                <p className="font-semibold truncate">
+                  {profile?.firstName} {profile?.lastName}
+                </p>
+
+                <div className="flex items-center gap-1.5">
+                  <Icon
+                    icon="solar:crown-star-bold"
+                    className="size-3.5 text-primary"
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {tier} Member
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="w-full md:w-1/3 flex flex-col gap-4">
+            {/* Points */}
+            <div className="flex items-center gap-4 shrink-0">
+              {/* Notifications */}
               <button
-                className="btn bg-white hover:bg-white/90 text-primary border-none shadow-md hover:shadow-lg rounded-2xl h-14"
-                aria-label="Show QR code"
+                type="button"
+                onClick={() => navigate("/notifications")}
+                aria-label="Notifications"
+                className="relative size-10 rounded-full border border-border bg-card flex items-center justify-center hover:bg-muted transition-colors"
               >
-                <Icon icon="solar:qr-code-outline" className="size-6" />
-                Scan to earn
+                <Icon icon="solar:bell-outline" className="size-5" />
+
+                {unreadNotificationCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                    {unreadNotificationCount > 99
+                      ? "99+"
+                      : unreadNotificationCount}
+                  </span>
+                )}
               </button>
-              <div className="bg-black/10 rounded-2xl p-4 border border-white/10">
-                <div className="mb-2 flex justify-between text-xs font-semibold text-white/90">
-                  <span>Progress to Platinum</span>
-                  <span>83%</span>
-                </div>
-                <progress className="progress bg-black/20 w-full" value="83" max="100" style={{ '--progress-color': 'white' }}></progress>
-              </div>
-            </div>
-          </div>
-        </section>
 
-        {/* ── Your Rewards ── */}
-        <section>
-          <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-xl md:text-2xl font-bold tracking-tight">Your Rewards</h2>
-            <button className="btn btn-ghost btn-sm text-primary font-bold hover:bg-primary/10">See all</button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {/* Reward card 1 */}
-            <div className="card bg-card border border-border shadow-sm hover:border-accent/30 cursor-pointer">
-              <div className="card-body p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="size-14 rounded-2xl bg-accent/10 flex items-center justify-center">
-                    <Icon icon="solar:crown-star-outline" className="size-8 text-accent" />
-                  </div>
-                  <span className="badge border-none bg-accent/10 text-accent-foreground font-bold py-3 px-3">
-                    Exclusive
-                  </span>
-                </div>
-                <h3 className="card-title text-lg">Free birthday treat</h3>
-                <p className="text-sm text-muted-foreground mt-1 mb-4 flex-grow">
-                  Choose any pastry on your special day. Valid until Jun 30.
+              {/* Points */}
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">Points</p>
+                <p className="font-bold text-primary">
+                  {points.toLocaleString()}
                 </p>
-                <div className="card-actions mt-auto">
-                  <button className="btn btn-primary w-full">View reward</button>
-                </div>
-              </div>
-            </div>
-
-            {/* Reward card 2 */}
-            <div className="card bg-card border border-border shadow-sm hover:border-primary/20 cursor-pointer">
-              <div className="card-body p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="size-14 rounded-2xl bg-primary/10 flex items-center justify-center">
-                    <Icon icon="solar:cup-star-outline" className="size-8 text-primary" />
-                  </div>
-                  <span className="badge border-none bg-primary/10 text-primary font-bold py-3 px-3">
-                    800 points
-                  </span>
-                </div>
-                <h3 className="card-title text-lg">$10 off your next visit</h3>
-                <p className="text-sm text-muted-foreground mt-1 mb-4 flex-grow">
-                  A little thank-you for being with us.
-                </p>
-                <div className="card-actions mt-auto">
-                  <button className="btn btn-dark w-full">Redeem now</button>
-                </div>
               </div>
             </div>
           </div>
-        </section>
-
-        {/* ── Two-column: Earn more / Recent activity ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24">
-
-          <section>
-            <div className="mb-5 flex items-center justify-between">
-              <h2 className="text-xl md:text-2xl font-bold tracking-tight">Earn more points</h2>
-              <button className="btn btn-ghost btn-sm text-primary font-bold hover:bg-primary/10">Explore</button>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="card bg-card border border-border shadow-sm hover:border-primary/30 cursor-pointer group">
-                <div className="card-body p-5">
-                  <div className="size-12 rounded-2xl bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <Icon icon="solar:cart-large-2-outline" className="size-6 text-primary" />
-                  </div>
-                  <h4 className="mt-4 text-base font-bold">Shop this week</h4>
-                  <p className="mt-1 text-sm text-muted-foreground leading-snug">Earn 2× points on essentials</p>
-                  <span className="mt-4 block text-sm font-bold text-primary">+200 pts</span>
-                </div>
-              </div>
-
-              <div className="card bg-card border border-border shadow-sm hover:border-accent/40 cursor-pointer group">
-                <div className="card-body p-5">
-                  <div className="size-12 rounded-2xl bg-accent/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <Icon icon="solar:users-group-rounded-outline" className="size-6 text-accent" />
-                  </div>
-                  <h4 className="mt-4 text-base font-bold">Invite a friend</h4>
-                  <p className="mt-1 text-sm text-muted-foreground leading-snug">You both get a bonus</p>
-                  <span className="mt-4 block text-sm font-bold text-accent">+500 pts</span>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section>
-            <div className="mb-5 flex items-center justify-between">
-              <h2 className="text-xl md:text-2xl font-bold tracking-tight">Recent activity</h2>
-              <button className="btn btn-ghost btn-sm text-primary font-bold hover:bg-primary/10">View all</button>
-            </div>
-            <div className="card bg-card border border-border shadow-sm overflow-hidden">
-              <div className="divide-y divide-border">
-                <div className="flex items-center gap-4 p-5 hover:bg-muted/20 transition-colors">
-                  <div className="size-12 rounded-full bg-accent/10 flex items-center justify-center shrink-0">
-                    <Icon icon="solar:cup-star-bold" className="size-6 text-accent" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-base font-bold truncate">Harbor Coffee</p>
-                    <p className="text-sm text-muted-foreground">Today, 9:42 AM</p>
-                  </div>
-                  <span className="text-sm font-bold text-accent bg-accent/10 px-3 py-1 rounded-full">+120</span>
-                </div>
-                <div className="flex items-center gap-4 p-5 hover:bg-muted/20 transition-colors">
-                  <div className="size-12 rounded-full bg-muted flex items-center justify-center shrink-0">
-                    <Icon icon="solar:gift-bold" className="size-6 text-muted-foreground" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-base font-bold truncate">Free coffee reward</p>
-                    <p className="text-sm text-muted-foreground">Yesterday</p>
-                  </div>
-                  <span className="text-sm font-bold text-muted-foreground bg-muted px-3 py-1 rounded-full">-300</span>
-                </div>
-              </div>
-            </div>
-          </section>
-
         </div>
+      )}
+      <div className="px-5 md:px-8 pt-6 pb-8 space-y-8">
+        {/* PROFILE BANNER */}
+        <section className="relative overflow-hidden rounded-[2rem] bg-primary p-6 md:p-8 text-primary-foreground shadow-sm">
+          <div className="absolute -right-16 -top-16 size-48 rounded-full bg-white/10" />
+          <div className="absolute -bottom-24 right-20 size-64 rounded-full bg-white/5" />
+
+          <div className="relative z-10">
+            <div className="flex justify-end mb-4">
+              <button
+                type="button"
+                onClick={() => navigate("/notifications")}
+                aria-label="Notifications"
+                className="relative size-11 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center transition-colors"
+              >
+                <Icon icon="solar:bell-outline" className="size-5" />
+
+                {unreadNotificationCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-white text-primary text-[10px] font-bold flex items-center justify-center">
+                    {unreadNotificationCount > 99
+                      ? "99+"
+                      : unreadNotificationCount}
+                  </span>
+                )}
+              </button>
+            </div>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+              {/* Profile */}
+              <div className="flex items-center gap-4">
+                <div className="size-16 md:size-20 rounded-full bg-white/20 flex items-center justify-center overflow-hidden shrink-0 border-2 border-white/30">
+                  {profile?.profilePhoto ? (
+                    <img
+                      src={profile.profilePhoto}
+                      alt={`${profile.firstName} profile`}
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-2xl md:text-3xl font-bold">
+                      {profile?.firstName?.charAt(0)?.toUpperCase()}
+                      {profile?.lastName?.charAt(0)?.toUpperCase()}
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-sm text-primary-foreground/70">
+                    Welcome back
+                  </p>
+
+                  <h1 className="text-2xl md:text-3xl font-bold mt-1">
+                    {profile?.firstName} {profile?.lastName}
+                  </h1>
+
+                  <div className="flex items-center gap-2 mt-2">
+                    <Icon icon="solar:crown-star-bold" className="size-4" />
+
+                    <span className="text-sm font-medium">{tier} Member</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Available Points */}
+              <div className="md:text-right">
+                <p className="text-sm text-primary-foreground/70">
+                  Available Points
+                </p>
+
+                <p className="text-4xl md:text-5xl font-bold mt-1">
+                  {points.toLocaleString()}
+                </p>
+
+                <p className="text-sm text-primary-foreground/70 mt-1">
+                  points available
+                </p>
+              </div>
+            </div>
+
+            {/* Platinum Progress */}
+            <div className="mt-7 border-t border-white/15 pt-5">
+              <div className="flex items-center justify-between mb-2 max-w-xl">
+                <p className="text-sm font-medium">
+                  {isPlatinum
+                    ? "Platinum reached"
+                    : `${toNextTier.toLocaleString()} points to Platinum`}
+                </p>
+
+                <span className="text-sm font-semibold">{progressPct}%</span>
+              </div>
+
+              <div className="h-2 w-full max-w-xl rounded-full bg-white/20 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-white transition-all"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+
+              <div className="flex justify-between max-w-xl mt-2 text-xs text-primary-foreground/60">
+                <span>{totalPointsEarned.toLocaleString()} earned</span>
+
+                <span>{nextGoal.toLocaleString()} pts</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* QUICK ACTIONS */}
+        <section>
+          <div className="mb-4">
+            <h2 className="text-xl font-bold">Quick Actions</h2>
+
+            <p className="text-sm text-muted-foreground mt-1">
+              Manage your loyalty account.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {/* Shop */}
+            <button
+              type="button"
+              onClick={() => navigate("/products")}
+              className="text-left rounded-2xl border border-border bg-card p-6 shadow-sm hover:border-primary/40 hover:scale-[1.02] hover:shadow-md transition-all duration-200 cursor-pointer"
+            >
+              <div className="size-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
+                <Icon
+                  icon="solar:bag-4-outline"
+                  className="size-6 text-primary"
+                />
+              </div>
+
+              <h3 className="font-bold text-lg">Shop Products</h3>
+
+              <p className="text-sm text-muted-foreground mt-2">
+                Browse products and earn points from your purchases.
+              </p>
+
+              <span className="inline-block text-sm text-primary font-medium mt-4">
+                Start shopping →
+              </span>
+            </button>
+
+            {/* Rewards */}
+            <button
+              type="button"
+              onClick={() => navigate("/rewards")}
+              className="text-left rounded-2xl border border-border bg-card p-6 shadow-sm hover:border-primary/40 hover:scale-[1.02] hover:shadow-md transition-all duration-200 cursor-pointer"
+            >
+              <div className="size-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
+                <Icon
+                  icon="solar:cup-star-outline"
+                  className="size-6 text-primary"
+                />
+              </div>
+
+              <h3 className="font-bold text-lg">Redeem Rewards</h3>
+
+              <p className="text-sm text-muted-foreground mt-2">
+                Use your points to redeem available rewards.
+              </p>
+
+              <span className="inline-block text-sm text-primary font-medium mt-4">
+                View rewards →
+              </span>
+            </button>
+
+            {/* Invite */}
+            <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+              <div className="size-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
+                <Icon
+                  icon="solar:users-group-rounded-outline"
+                  className="size-6 text-primary"
+                />
+              </div>
+
+              <h3 className="font-bold text-lg">Invite a Friend</h3>
+
+              <p className="text-sm text-muted-foreground mt-2">
+                Share the loyalty program with your friends and enjoy more
+                benefits together.
+              </p>
+
+              <button
+                type="button"
+                onClick={handleInviteFriend}
+                className="btn btn-dark mt-4 text-white cursor-pointer"
+                disabled={!profile?.referralCode}
+              >
+                <Icon icon="solar:share-outline" className="size-5" />
+                Invite Friend
+              </button>
+
+              <p className="text-xs text-muted-foreground mt-2">
+                Referral and earn points.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* FEATURED REWARDS */}
+        <section>
+          <div className="mb-4">
+            <h2 className="text-xl font-bold">Featured Rewards</h2>
+
+            <p className="text-sm text-muted-foreground mt-1">
+              Popular rewards you can redeem with your points.
+            </p>
+          </div>
+
+          {featuredRewards.length === 0 ? (
+            <div className="rounded-2xl border border-primary/20 bg-card p-6 shadow-sm hover:scale-[1.02] hover:shadow-md transition-all duration-200">
+              <Icon
+                icon="solar:star-outline"
+                className="size-12 mx-auto text-muted-foreground mb-3"
+              />
+
+              <h3 className="font-semibold">No featured rewards</h3>
+
+              <p className="text-sm text-muted-foreground mt-1">
+                Check back later for featured rewards.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {featuredRewards.slice(0, 3).map((reward) => (
+                <div
+                  key={reward._id}
+                  className="rounded-2xl border border-primary/20 bg-card p-6 shadow-sm"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="size-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                      <Icon
+                        icon="solar:star-bold"
+                        className="size-6 text-primary"
+                      />
+                    </div>
+
+                    <span className="text-xs font-semibold text-primary bg-primary/10 px-3 py-1 rounded-full">
+                      Featured
+                    </span>
+                  </div>
+
+                  <h3 className="font-bold text-lg">{reward.name}</h3>
+
+                  <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+                    {reward.description}
+                  </p>
+
+                  <div className="flex items-center justify-between mt-5">
+                    <span className="font-bold text-primary">
+                      {reward.pointsRequired.toLocaleString()} pts
+                    </span>
+
+                    <span className="text-xs text-muted-foreground">
+                      {reward.quantity} available
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => navigate("/rewards")}
+                    className="btn btn-dark text-white w-full mt-5"
+                  >
+                    View Reward
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* AVAILABLE REWARDS */}
+        <section>
+          <div className="mb-4">
+            <h2 className="text-xl font-bold">Available Rewards</h2>
+
+            <p className="text-sm text-muted-foreground mt-1">
+              Rewards you can redeem with your points.
+            </p>
+          </div>
+
+          {availableRewards.length === 0 ? (
+            <div className="rounded-2xl border border-border bg-card p-6 shadow-sm hover:scale-[1.02] hover:shadow-md transition-all duration-200">
+              <Icon
+                icon="solar:cup-star-outline"
+                className="size-12 mx-auto text-muted-foreground mb-3"
+              />
+
+              <h3 className="font-semibold">No rewards available</h3>
+
+              <p className="text-sm text-muted-foreground mt-1">
+                Check back later for new rewards.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {availableRewards.map((reward) => (
+                <div
+                  key={reward._id}
+                  className="rounded-2xl border border-border bg-card p-6 shadow-sm"
+                >
+                  <div className="size-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
+                    <Icon
+                      icon="solar:cup-star-outline"
+                      className="size-6 text-primary"
+                    />
+                  </div>
+
+                  <h3 className="font-bold text-lg">{reward.name}</h3>
+
+                  <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+                    {reward.description}
+                  </p>
+
+                  <div className="flex items-center justify-between mt-5">
+                    <span className="font-bold text-primary">
+                      {reward.pointsRequired.toLocaleString()} pts
+                    </span>
+
+                    <span className="text-xs text-muted-foreground">
+                      {reward.quantity} available
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* RECENT ACTIVITY */}
+        <section>
+          <div className="mb-4">
+            <h2 className="text-xl font-bold">Recent Activity</h2>
+
+            <p className="text-sm text-muted-foreground mt-1">
+              Your latest loyalty activity.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+            {activity.length === 0 ? (
+              <div className="p-8 text-center">
+                <Icon
+                  icon="solar:history-outline"
+                  className="size-12 mx-auto text-muted-foreground mb-3"
+                />
+
+                <h3 className="font-semibold">No recent activity</h3>
+
+                <p className="text-sm text-muted-foreground mt-1">
+                  Your purchases and points activity will appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {activity.slice(0, 6).map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between gap-4 p-5"
+                  >
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="size-10 shrink-0 rounded-xl bg-muted flex items-center justify-center">
+                        <Icon
+                          icon={
+                            item.points_delta >= 0
+                              ? "solar:arrow-up-outline"
+                              : "solar:arrow-down-outline"
+                          }
+                          className={`size-5 ${
+                            item.points_delta >= 0
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }`}
+                        />
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{item.title}</p>
+
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {timeAgo(item.created_at)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <span
+                      className={`font-bold whitespace-nowrap ${
+                        item.points_delta >= 0
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }`}
+                    >
+                      {item.points_delta >= 0 ? "+" : ""}
+                      {item.points_delta.toLocaleString()} pts
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* POINTS WALLET */}
+        <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
+            <div className="flex items-start gap-4">
+              <div className="size-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                <Icon
+                  icon="solar:wallet-money-outline"
+                  className="size-6 text-primary"
+                />
+              </div>
+
+              <div>
+                <h2 className="font-bold text-lg">Your Points Wallet</h2>
+
+                <p className="text-sm text-muted-foreground mt-1">
+                  You currently have{" "}
+                  <span className="font-semibold text-foreground">
+                    {points.toLocaleString()} points
+                  </span>{" "}
+                  available.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => navigate("/wallet")}
+              className="btn btn-dark text-white"
+            >
+              View Points
+            </button>
+          </div>
+        </section>
       </div>
 
-      <MobileNav currentTab="home" onTabChange={onTabChange} />
+      <MobileNav />
     </main>
   );
 }
